@@ -3,14 +3,17 @@ import datetime
 from flask import Flask, request, render_template_string, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
+
 app = Flask(__name__)
 app.secret_key = 'hospital-super-secret-key'
 DATABASE = 'hospital.db'
+
 
 def get_db():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     with get_db() as conn:
@@ -34,7 +37,7 @@ def init_db():
                 FOREIGN KEY (doctor_id) REFERENCES users (id)
             )
         ''')
-        
+       
         default_users = [
             ('Dev', generate_password_hash('dev@123'), 'Admin', 'System Administrator'),
             ('dr_smith', generate_password_hash('smith@123'), 'Doctor', 'General Physician'),
@@ -44,7 +47,7 @@ def init_db():
             ('ramu', generate_password_hash('ramu@123'), 'Patient', 'N/A'),
             ('yash', generate_password_hash('yash@123'), 'Patient', 'N/A')
         ]
-        
+       
         for username, password, role, specialization in default_users:
             existing = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
             if not existing:
@@ -54,7 +57,9 @@ def init_db():
                 )
         conn.commit()
 
+
 init_db()
+
 
 # --- HTML TEMPLATES ---
 BASE_HTML = """
@@ -100,6 +105,7 @@ BASE_HTML = """
 </html>
 """
 
+
 INDEX_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 <div class="p-5 mb-4 bg-white rounded-3 shadow-sm text-center">
     <h1 class="display-5 fw-bold text-primary">Hospital Management System</h1>
@@ -112,6 +118,7 @@ INDEX_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
     {% endif %}
 </div>
 """)
+
 
 LOGIN_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 <div class="row justify-content-center">
@@ -136,6 +143,7 @@ LOGIN_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 </div>
 """)
 
+
 REGISTER_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 <div class="row justify-content-center">
     <div class="col-md-5">
@@ -158,6 +166,7 @@ REGISTER_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
     </div>
 </div>
 """)
+
 
 APPOINTMENTS_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 <div class="row">
@@ -241,6 +250,7 @@ APPOINTMENTS_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 </div>
 """)
 
+
 ADMIN_USERS_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 <div class="row">
     <div class="col-md-4">
@@ -319,10 +329,12 @@ ADMIN_USERS_HTML = BASE_HTML.replace("{% block content %}{% endblock %}", """
 </div>
 """)
 
+
 # --- ROUTES ---
 @app.route('/')
 def index():
     return render_template_string(INDEX_HTML)
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -338,6 +350,7 @@ def register():
         except sqlite3.IntegrityError:
             flash('Username already exists.', 'danger')
     return render_template_string(REGISTER_HTML)
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -356,28 +369,32 @@ def login():
                 flash('Invalid credentials.', 'danger')
     return render_template_string(LOGIN_HTML)
 
+
 @app.route('/appointments', methods=['GET', 'POST'])
 def appointments():
     if 'user_id' not in session:
         flash('Please login first.', 'warning')
         return redirect(url_for('login'))
-    
+   
     today_str = datetime.date.today().isoformat()
     max_date_str = (datetime.date.today() + datetime.timedelta(days=30)).isoformat()
+
 
     if request.method == 'POST' and session.get('role') == 'Patient':
         doctor_id = request.form['doctor_id']
         appointment_date = request.form['appointment_date']
-        
+       
         if appointment_date < today_str:
             flash('Cannot book appointments for past dates.', 'danger')
             return redirect(url_for('appointments'))
+
 
         with get_db() as conn:
             existing_count = conn.execute(
                 "SELECT COUNT(*) as cnt FROM appointments WHERE doctor_id = ? AND appointment_date = ? AND status != 'Rejected'",
                 (doctor_id, appointment_date)
             ).fetchone()['cnt']
+
 
             if existing_count >= 3:
                 flash('Selected doctor is fully booked on this date (max 3 slots). Please choose another date.', 'danger')
@@ -390,33 +407,35 @@ def appointments():
                 flash('Appointment requested successfully! Status is Pending approval.', 'success')
         return redirect(url_for('appointments'))
 
+
     with get_db() as conn:
         doctors = conn.execute("SELECT * FROM users WHERE role = 'Doctor'").fetchall()
-        
+       
         if session.get('role') == 'Admin':
             user_appointments = conn.execute("""
-                SELECT appointments.*, p.username as patient_name, d.username as doctor_name, d.specialization 
-                FROM appointments 
+                SELECT appointments.*, p.username as patient_name, d.username as doctor_name, d.specialization
+                FROM appointments
                 JOIN users p ON appointments.user_id = p.id
                 JOIN users d ON appointments.doctor_id = d.id
             """).fetchall()
         elif session.get('role') == 'Doctor':
             user_appointments = conn.execute("""
-                SELECT appointments.*, p.username as patient_name, d.username as doctor_name, d.specialization 
-                FROM appointments 
+                SELECT appointments.*, p.username as patient_name, d.username as doctor_name, d.specialization
+                FROM appointments
                 JOIN users p ON appointments.user_id = p.id
                 JOIN users d ON appointments.doctor_id = d.id
                 WHERE appointments.doctor_id = ?
             """, (session['user_id'],)).fetchall()
         else:
             user_appointments = conn.execute("""
-                SELECT appointments.*, d.username as doctor_name, d.specialization 
-                FROM appointments 
+                SELECT appointments.*, d.username as doctor_name, d.specialization
+                FROM appointments
                 JOIN users d ON appointments.doctor_id = d.id
                 WHERE appointments.user_id = ?
             """, (session['user_id'],)).fetchall()
-        
+       
     return render_template_string(APPOINTMENTS_HTML, appointments=user_appointments, doctors=doctors, min_date=today_str, max_date=max_date_str)
+
 
 @app.route('/appointment/<int:appt_id>/approve')
 def approve_appointment(appt_id):
@@ -429,6 +448,7 @@ def approve_appointment(appt_id):
     flash('Appointment approved successfully.', 'success')
     return redirect(url_for('appointments'))
 
+
 @app.route('/appointment/<int:appt_id>/reject')
 def reject_appointment(appt_id):
     if session.get('role') not in ['Admin', 'Doctor']:
@@ -440,6 +460,7 @@ def reject_appointment(appt_id):
     flash('Appointment rejected.', 'info')
     return redirect(url_for('appointments'))
 
+
 @app.route('/admin/users')
 def admin_users():
     if session.get('role') != 'Admin':
@@ -448,6 +469,7 @@ def admin_users():
     with get_db() as conn:
         users = conn.execute("SELECT * FROM users").fetchall()
     return render_template_string(ADMIN_USERS_HTML, users=users)
+
 
 @app.route('/admin/users/add', methods=['POST'])
 def admin_add_user():
@@ -466,6 +488,7 @@ def admin_add_user():
         flash('Username already exists.', 'danger')
     return redirect(url_for('admin_users'))
 
+
 @app.route('/admin/users/update/<int:user_id>', methods=['POST'])
 def admin_update_user(user_id):
     if session.get('role') != 'Admin':
@@ -479,6 +502,7 @@ def admin_update_user(user_id):
     flash('User role and details updated successfully.', 'success')
     return redirect(url_for('admin_users'))
 
+
 @app.route('/admin/users/delete/<int:user_id>')
 def admin_delete_user(user_id):
     if session.get('role') != 'Admin':
@@ -489,11 +513,13 @@ def admin_delete_user(user_id):
     flash('User deleted successfully.', 'info')
     return redirect(url_for('admin_users'))
 
+
 @app.route('/logout')
 def logout():
     session.clear()
     flash('Logged out successfully.', 'info')
     return redirect(url_for('index'))
+
 
 if __name__ == '__main__':
     app.run(debug=True, port=3000)
